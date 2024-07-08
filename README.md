@@ -1,7 +1,8 @@
-# Video-game solver
+# Last Call BBS Kabafuda solitaire solver
 
-Automated solution finder and executioner for whatever video-game.
-This is just a template for me to make solvers faster and easier.
+Automated solution finder and executioner for Last Call BBS Kabafuda solitaire.
+
+Get the game on [Steam](https://store.steampowered.com/app/1511780/Last_Call_BBS/).
 
 ## Requirements
 
