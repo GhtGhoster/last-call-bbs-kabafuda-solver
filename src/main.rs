@@ -8,7 +8,12 @@ const CARD_Y: i32 = 474;
 const CARD_W: i32 = 128;
 const CARD_H: i32 = 30;
 
+const SLOT_X: i32 = 728;
+const SLOT_Y: i32 = 276;
+const SLOT_W: i32 = 128;
+
 #[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
 enum Difficulty {
     Easy = 0,
     Medium = 1,
@@ -33,7 +38,6 @@ impl Difficulty {
 #[derive(Clone)]
 struct Matrix {
     stacks: Vec<Vec<u8>>,
-    difficulty: Difficulty,
     slots: Vec<Vec<u8>>,
 }
 
@@ -53,12 +57,18 @@ impl Matrix {
                         20,
                     ).unwrap()
                 );
+                let mut found_card = false;
                 for n in 0..10 {
                     let comparison_image = Reader::open(format!("assets/{n}.png")).unwrap().decode().unwrap();
                     if comparison_image == image {
                         stacks.last_mut().unwrap().push(n);
+                        found_card = true;
                         break;
                     }
+                }
+                if !found_card {
+                    image.save("error.png").unwrap();
+                    panic!("Couldn't detect card");
                 }
             }
         }
@@ -68,7 +78,6 @@ impl Matrix {
         }
         Self {
             stacks,
-            difficulty,
             slots,
         }
     }
@@ -170,13 +179,16 @@ impl Matrix {
                 }
                 max_count += 1;
             }
-            score += 2usize.pow(max_count);
+            if stack.len() == max_count && max_count == 4 {
+                score += 10;
+            } else if max_count > 0 {
+                score += max_count - 1;
+            }
         }
         for slot in &self.slots {
-            // if slot.len() == 4 {
-            //     score += 4;
-            // }
-            score += 2usize.pow(slot.len() as u32);
+            if slot.len() == 4 {
+                score += 10;
+            }
         }
         score
     }
@@ -208,6 +220,11 @@ impl Matrix {
                 for _ in 0..game_move.count {
                     let card = matrix.stacks[from].pop().unwrap();
                     matrix.stacks[to].push(card);
+                }
+                if matrix.stacks[to].len() == 4 && matrix.stacks[to].iter().all(|card| card == matrix.stacks[to].last().unwrap()){
+                    if matrix.slots.len() < 4 {
+                        matrix.slots.push(vec![]);
+                    }
                 }
             }
         }
@@ -275,7 +292,7 @@ struct Move {
 
 fn main() {
     // settings
-    let difficulty = Difficulty::Easy;
+    let difficulty = Difficulty::Expert;
     
     // initialize
     let mut enigo = Enigo::new(&Settings::default()).unwrap();
@@ -306,20 +323,52 @@ fn main() {
     sleep(Duration::from_millis(7000));
 
     // detect starting position
-    let matrix = Matrix::from_screen(difficulty);
+    let mut matrix = Matrix::from_screen(difficulty);
 
     // solve
     let mut past_matrices: HashSet<Matrix> = HashSet::new();
-    past_matrices.insert(matrix.clone());
     let past_moves: Vec<Move> = vec![];
-    let solution = solve(matrix, &mut past_matrices, &past_moves).unwrap();
+    let solution = solve(matrix.clone(), &mut past_matrices, &past_moves).unwrap();
 
+    // execute solution
     for past_move in solution {
-        println!("{past_move:?}");
+        let Move {from, to, count} = past_move;
+        let (from_x, from_y) = if from >= 8 {
+            (
+                SLOT_X + SLOT_W * (from-8) as i32,
+                SLOT_Y,
+            )
+        } else {
+            (
+                CARD_X + CARD_W * from as i32,
+                CARD_Y + CARD_H * (matrix.stacks[from].len()-count) as i32,
+            )
+        };
+        let (to_x, to_y) = if to >= 8 {
+            (
+                SLOT_X + SLOT_W * (to-8) as i32,
+                SLOT_Y,
+            )
+        } else {
+            (
+                CARD_X + CARD_W * to as i32,
+                CARD_Y + CARD_H * (matrix.stacks[to].len()-count) as i32,
+            )
+        };
+        enigo.move_mouse(1920 + from_x, from_y, Coordinate::Abs).unwrap();
+        sleep(Duration::from_millis(50));
+        enigo.button(enigo::Button::Left, enigo::Direction::Click).unwrap();
+        sleep(Duration::from_millis(50));
+        enigo.move_mouse(1920 + to_x, to_y, Coordinate::Abs).unwrap();
+        sleep(Duration::from_millis(50));
+        enigo.button(enigo::Button::Left, enigo::Direction::Click).unwrap();
+        sleep(Duration::from_millis(50));
+        matrix = matrix.make_move(past_move);
     }
 }
 
 fn solve(matrix: Matrix, past_matrices: &mut HashSet<Matrix>, past_moves: &Vec<Move>) -> Option<Vec<Move>> {
+    past_matrices.insert(matrix.clone());
     let mut possible_futures = vec![];
     for available_move in matrix.available_moves() {
         let new_matrix = matrix.make_move(available_move);
@@ -335,13 +384,14 @@ fn solve(matrix: Matrix, past_matrices: &mut HashSet<Matrix>, past_moves: &Vec<M
     for (new_matrix, new_score, new_move) in possible_futures {
         let mut new_past_moves = past_moves.clone();
         new_past_moves.push(new_move);
-        if new_score == 160 {
+        if new_score == 100 {
             return Some(new_past_moves);
         }
-        past_matrices.insert(new_matrix.clone());
-        let next_step = solve(new_matrix, past_matrices, past_moves);
-        if next_step.is_some() {
-            return next_step;
+        if !past_matrices.contains(&new_matrix) {
+            let next_step = solve(new_matrix, past_matrices, &new_past_moves);
+            if next_step.is_some() {
+                return next_step;
+            }
         }
     }
     None
